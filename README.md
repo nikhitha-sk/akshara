@@ -4,7 +4,7 @@ One web app with four AI tools for languages big tech mostly ignores:
 
 | Tool | What it does | Status |
 |---|---|---|
-| **Transliteration** | `naanu shaalege hoguttene` → `ನಾನು ಶಾಲೆಗೆ ಹೋಗುತ್ತೇನೆ` | ✅ rule + word-list baseline · 🔜 char-Transformer / ByT5 |
+| **Transliteration** | `naanu shaalege hoguttene` → `ನಾನು ಶಾಲೆಗೆ ಹೋಗುತ್ತೇನೆ` | ✅ char-Transformer v2 (Kannada 76.7% · Tulu 90.4% top-1) · rules fallback |
 | **Spell-checker** | `ನಮಸ್ಕರ` → `ನಮಸ್ಕಾರ` | ✅ SymSpell + Kannada-aware distance baseline · 🔜 ByT5 context model |
 | **OCR** | photo of a printed page → editable text | 🔜 Phase 3 (synthetic images + CRNN-CTC) |
 | **Speech-to-text** | spoken Tulu → `ಎಂಚ ಉಲ್ಲರ್?` | 🔜 Phase 4 (Whisper fine-tuned on Tulu) |
@@ -48,9 +48,26 @@ pytest                                     # tests
 
 See [`docs/DATA_PLAN.md`](docs/DATA_PLAN.md) for what is automatic and what needs volunteers.
 
-## Baseline scores (the numbers to beat)
+## Scores
 
-See [`reports/BASELINES.md`](reports/BASELINES.md).
+| Transliteration (top-1) | Rules | AI4Bharat IndicXlit | **Ours v2** |
+|---|---|---|---|
+| Kannada, 11,380 words | 48.7% | **80.1%** | 76.7% |
+| Tulu, 1,170 words (machine-made test) | 80.8% | 68.1% | **90.4%** |
+
+The Tulu test is machine-made, so the real check is a human-typed Tulu test (volunteers).
+Details, spell-checker scores and error analysis: [`reports/BASELINES.md`](reports/BASELINES.md).
+
+## Training the transliteration model
+
+```bash
+python -m scripts.prepare_xlit_data                     # pack data/xlit/kaggle/
+cd data/xlit/kaggle && kaggle datasets version -p . -m "update"
+cd notebooks/kaggle_xlit && kaggle kernels push -p . --accelerator NvidiaTeslaT4   # ~1.5 h on a T4
+kaggle kernels output nikhithakotian/akshara-xlit-train -p runs/xlit
+cp runs/xlit/xlit/xlit*.pt models/xlit/checkpoints/     # the API picks them up on restart
+python -m scripts.compare_xlit --tag vN                 # score vs rules and IndicXlit
+```
 
 ## Repo layout
 
@@ -59,7 +76,7 @@ common/        normalize, split_words, split_aksharas, metrics (CER/WER/top-k/P-
 data/          raw/ (never edited) · corpus/ · xlit/ spell/ ocr/ stt/ + dataset cards
 scripts/       download_*, extract_*, clean_*, build_*, make_synthetic_*, eval_baselines
 recorder_app/  Streamlit app volunteers use to type / record Tulu
-models/        xlit/ spell/ ocr/ stt/ — rules, baselines, (soon) train.py & eval.py
+models/        xlit/ (rules, char-Transformer, train.py) · spell/ · ocr/ · stt/
 api/           FastAPI: /xlit /spell /ocr /stt /feedback /health /history
 notebooks/     Colab / Kaggle training notebooks
 reports/       evaluation results
@@ -76,7 +93,7 @@ Every "Was this right? → No, fix it" click saves a *(model output, user fix)* 
 | Phase | Weeks | Deliverable |
 |---|---|---|
 | 0 · Setup & corpus | 1–2 | ✅ repo, corpus, word lists, text helpers, volunteer app |
-| 1 · Transliteration | 3–5 | ✅ baseline · 🔜 char model (Kannada → Tulu transfer), beat IndicXlit |
+| 1 · Transliteration | 3–5 | ✅ char model v2 (Kannada → Tulu transfer), IndicXlit compared · 🔜 human Tulu test set |
 | 2 · Spell-checker | 6–7 | ✅ baseline · 🔜 ByT5, real-mistake test set |
 | 3 · OCR | 8–10 | synthetic line images, CRNN-CTC, beat Tesseract `kan` |
 | 4 · Speech-to-text | 11–14 | Tulu clips, Whisper fine-tune, WER-vs-hours chart |

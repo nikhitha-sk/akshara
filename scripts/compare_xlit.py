@@ -22,12 +22,13 @@ from models.spell.checker import load_wordfreq
 from models.xlit.rules import RuleTransliterator
 
 KAGGLE = XLIT / "kaggle"
-TESTS = {"kn_test": "kn", "tcy_test": "tcy"}
+TESTS = {"kn_test": "kn", "tcy_test": "tcy", "casual_check_kn": "kn"}
+CASUAL = REPORTS / "casual_check_kn.tsv"  # 62 hand-written everyday words (ooru, oota, enu...)
 
 
 def read_rows(path: Path) -> list[list[str]]:
     with open(path, encoding="utf-8") as f:
-        return [line.rstrip("\n").split("\t") for line in f if line.strip()]
+        return [line.rstrip("\r\n").split("\t") for line in f if line.strip()]
 
 
 def score(refs: list[str], cands: list[list[str]], ms: float) -> dict:
@@ -56,6 +57,7 @@ def main() -> None:
                     help="Kannada-only checkpoint used for kn_test (falls back to --ckpt)")  # fmt: skip
     ap.add_argument("--indicxlit", type=Path, default=Path("runs/indicxlit"))
     ap.add_argument("--data", type=Path, default=KAGGLE)
+    ap.add_argument("--tag", default="", help="model version shown in the table, e.g. v2")
     a = ap.parse_args()
 
     freqs = {lang: load_wordfreq(a.data / f"{lang}_wordfreq.tsv") for lang in ("kn", "tcy")}
@@ -71,11 +73,14 @@ def main() -> None:
     results = []
     for test, lang in TESTS.items():
         ix_file = a.indicxlit / f"indicxlit_{test}.tsv"
+        gold = CASUAL if test == "casual_check_kn" else a.data / f"{test}.tsv"
         if ix_file.exists():
             ix_rows = [r for r in read_rows(ix_file) if len(r) >= 2]
             rows = [(r[0], r[1]) for r in ix_rows]
+        elif gold.exists():
+            ix_rows, rows = [], [tuple(r[:2]) for r in read_rows(gold)]
         else:
-            ix_rows, rows = [], [tuple(r[:2]) for r in read_rows(a.data / f"{test}.tsv")]
+            continue
         romans, refs = [r for r, _ in rows], [n for _, n in rows]
         models = {}
         if ix_rows:
@@ -85,7 +90,7 @@ def main() -> None:
             lambda ws, x=rules: [x.word_candidates(w, k=5) for w in ws], romans
         )
         if lang in neural:
-            models["char-transformer+wordlist (ours)"] = timed(
+            models[f"char-transformer+wordlist (ours{' ' + a.tag if a.tag else ''})"] = timed(
                 lambda ws, lg=lang: neural[lg].candidates(ws, lg, k=5), romans
             )
         for name, (cands, ms) in models.items():

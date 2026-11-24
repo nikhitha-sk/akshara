@@ -28,6 +28,6 @@ cmd = [
     "--out", "/kaggle/working/xlit",
     "--kn-epochs", "8",
     "--tcy-epochs", "40",
-    "--hours", "6",
+    "--hours", "2.5",  # free GPU quota is only 6 h/week
 ]  # fmt: skip
 subprocess.run(cmd, check=True, cwd=CODE)
