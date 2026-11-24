@@ -1,0 +1,25 @@
+# Core text tools
+regex>=2023.0
+indic-transliteration>=2.3
+symspellpy>=6.7
+
+# Data collection
+requests>=2.31
+tqdm>=4.66
+mwparserfromhell>=0.6
+huggingface_hub>=0.23
+pandas>=2.0
+
+# API + apps
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+streamlit>=1.39
+
+# Dev
+pytest>=8.0
+ruff>=0.4
+pre-commit>=3.7
+
+# Training (install on Colab/Kaggle, not needed for Phase 0)
+# torch, transformers, datasets, evaluate, wandb

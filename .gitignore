@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Data: never commit big files or private volunteer data
+data/raw/*
+!data/raw/.gitkeep
+data/consent/
+data/corpus/*
+!data/corpus/.gitkeep
+!data/corpus/README.md
+data/xlit/*
+!data/xlit/.gitkeep
+!data/xlit/*.md
+data/spell/*
+!data/spell/.gitkeep
+!data/spell/*.md
+data/ocr/*
+!data/ocr/.gitkeep
+data/stt/*
+!data/stt/.gitkeep
+*.db
+*.sqlite
+
+# Models / checkpoints
+*.pt
+*.bin
+*.safetensors
+*.onnx
+checkpoints/
+wandb/
+mlruns/
+
+# Secrets
+.env
+.env.*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Project guide (kept locally)
+*.pdf
