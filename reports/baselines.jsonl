@@ -1,0 +1,4 @@
+{"tool": "xlit", "model": "rules+wordlist", "lang": "kn", "test_file": "data\\xlit\\kn_test.jsonl", "n": 2000, "top1": 0.3895, "top5": 0.498, "cer": 0.1803, "ms_per_word": 1.59, "date": "2026-11-24"}
+{"tool": "xlit", "model": "rules", "lang": "kn", "test_file": "data\\xlit\\kn_test.jsonl", "n": 2000, "top1": 0.118, "top5": 0.3255, "cer": 0.2376, "ms_per_word": 1.53, "date": "2026-11-24"}
+{"tool": "spell", "model": "symspell+akshara-distance", "lang": "tcy", "test_file": "data\\spell\\tcy_synthetic.jsonl", "n": 1000, "precision": 0.7287, "recall": 0.5092, "f0.5": 0.6709, "tp": 854, "fp": 318, "fn": 823, "ms_per_sentence": 1.75, "date": "2026-11-24"}
+{"tool": "spell", "model": "symspell+akshara-distance", "lang": "kn", "test_file": "data\\spell\\kn_synthetic.jsonl", "n": 1000, "precision": 0.7761, "recall": 0.4253, "f0.5": 0.6662, "tp": 735, "fp": 212, "fn": 993, "ms_per_sentence": 1.36, "date": "2026-11-24"}
