@@ -53,7 +53,7 @@
 
     <section data-panel="xlit">
       <textarea id="xin" placeholder="Type in English letters… e.g. naanu shaalege hoguttene  /  encha ullar?"></textarea>
-      <p class="muted">Converts after each space. Click a word's alternative to swap it.</p>
+      <p class="muted">Converts after each space. Click a word's alternative to swap it. <span id="xeng"></span></p>
       <div class="out" id="xout"></div>
       <div class="alts" id="xalts"></div>
       <div class="fb"><span class="muted">Was this right?</span><button class="ghost" id="xyes">Yes</button><button class="ghost" id="xfix">No, let me fix it</button><span class="muted" id="xmsg"></span></div>
@@ -88,6 +88,7 @@ async function runXlit() {
   if (!text.trim()) { $("xout").textContent = ""; $("xalts").innerHTML = ""; return; }
   last = await post("/xlit", {text, lang: lang(), k: 5});
   $("xout").textContent = last.output;
+  $("xeng").textContent = last.engine ? `Engine: ${last.engine}` : "";
   $("xalts").innerHTML = last.alternatives.map((alts, i) =>
     alts.slice(1).map(a => `<span class="chip" data-i="${i}" data-w="${esc(a)}">${esc(a)}</span>`).join("")).join("");
 }

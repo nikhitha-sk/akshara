@@ -1,0 +1,13 @@
+{
+  "id": "nikhithakotian/akshara-indicxlit-baseline",
+  "title": "akshara-indicxlit-baseline",
+  "code_file": "run_indicxlit.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["nikhithakotian/akshara-xlit-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

@@ -19,6 +19,7 @@ from models.xlit.model import PAD, Vocab, XlitTransformer, beam_search
 from models.xlit.rules import RuleTransliterator
 
 MAX_WORD = 30
+CHUNK = 128  # words per beam-search batch (keeps CPU memory small)
 _WORD_RE = re.compile(r"[A-Za-z]+")
 
 
@@ -60,11 +61,12 @@ class NeuralTransliterator:
     def candidates(self, words: list[str], lang: str, k: int = 5) -> list[list[str]]:
         words = [w.lower() for w in words]
         todo = sorted({w for w in words if (w, lang) not in self._cache and len(w) <= MAX_WORD})
-        if todo:
-            for w, c in zip(todo, self._batch(todo, lang), strict=True):
-                self._cache[(w, lang)] = c or [w]
-        if len(self._cache) > 50_000:
+        if len(self._cache) + len(todo) > 50_000:
             self._cache.clear()
+        for i in range(0, len(todo), CHUNK):
+            chunk = todo[i : i + CHUNK]
+            for w, c in zip(chunk, self._batch(chunk, lang), strict=True):
+                self._cache[(w, lang)] = c or [w]
         res = []
         for w in words:
             if (w, lang) in self._cache:
