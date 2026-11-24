@@ -1,0 +1,13 @@
+{
+  "id": "nikhithakotian/akshara-spell-train",
+  "title": "akshara-spell-train",
+  "code_file": "train_spell.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["nikhithakotian/akshara-spell-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
