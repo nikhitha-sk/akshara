@@ -32,6 +32,11 @@ MAX_CHARS = 96  # model window (training windows are <= 96 characters)
 DEFAULT_MARGINS = {"unknown": 0.0, "known": 4.0}
 
 
+def _norm(text: str) -> str:
+    # keep zero-width marks so character offsets match the caller's text (the API underlines in place)
+    return normalize(text, strip_zero_width=False)
+
+
 @dataclass
 class Suspect:
     start: int
@@ -42,7 +47,9 @@ class Suspect:
 
 
 def _words(text: str):
-    return [t for t in tokenize(text) if t.is_word and len(t.text) >= 2 and kannada_ratio(t.text) >= 0.5]
+    return [
+        t for t in tokenize(text) if t.is_word and len(t.text) >= 2 and kannada_ratio(t.text) >= 0.5
+    ]
 
 
 def _chunks(text: str, max_chars: int = MAX_CHARS) -> list[tuple[int, int]]:
@@ -85,7 +92,9 @@ class NeuralSpellChecker:
         self.model = model.to(device).eval()
         self.v = vocab
         self.device, self.k, self.batch = device, k, batch
-        self.checkers = dict(checkers or {lang: SpellChecker(wf) for lang, wf in (wordfreqs or {}).items()})
+        self.checkers = dict(
+            checkers or {lang: SpellChecker(wf) for lang, wf in (wordfreqs or {}).items()}
+        )
         self.margins = {lang: dict(DEFAULT_MARGINS) for lang in ("kn", "tcy")}
         for lang, m in (margins or {}).items():
             self.margins[lang].update(m)
@@ -99,7 +108,10 @@ class NeuralSpellChecker:
         return src.to(self.device)
 
     def _greedy(self, src: torch.Tensor) -> list[str]:
-        return [self.v.decode(ids) for ids in greedy_decode(self.model, src, max_len=MAX_CHARS + 4).tolist()]
+        return [
+            self.v.decode(ids)
+            for ids in greedy_decode(self.model, src, max_len=MAX_CHARS + 4).tolist()
+        ]
 
     def _score(self, src: torch.Tensor, rows: list[int], texts: list[str]) -> list[float]:
         out = []
@@ -110,15 +122,21 @@ class NeuralSpellChecker:
 
     # ---- core ------------------------------------------------------------------------------
     @torch.no_grad()
-    def propose(self, texts: list[str], lang: str, use_model_words: bool = True) -> list[list[Suspect]]:
+    def propose(
+        self, texts: list[str], lang: str, use_model_words: bool = True
+    ) -> list[list[Suspect]]:
         """For each text (<= MAX_CHARS), the suspect words with candidates scored by the model."""
         sc = self.checkers[lang]
         result: list[list[Suspect]] = []
         for b in range(0, len(texts), self.batch):
-            chunk = [normalize(t) for t in texts[b : b + self.batch]]
+            chunk = [_norm(t) for t in texts[b : b + self.batch]]
             src = self._src(chunk, lang)
             greedy = self._greedy(src) if use_model_words else [""] * len(chunk)
-            rows, variants, owners = [], [], []  # owners: (text idx, suspect idx, cand) or (text idx,)
+            rows, variants, owners = (
+                [],
+                [],
+                [],
+            )  # owners: (text idx, suspect idx, cand) or (text idx,)
             per_text = []
             for ti, (text, g) in enumerate(zip(chunk, greedy, strict=True)):
                 toks, gws = _words(text), [t.text for t in _words(g)]
@@ -132,7 +150,9 @@ class NeuralSpellChecker:
                         if not known or akshara_distance(tok.text, mw) <= 1.0:
                             cands.append(mw)
                     if not known or cands:
-                        sus.append(Suspect(tok.start, tok.end, tok.text, known, [(c, 0.0) for c in cands]))
+                        sus.append(
+                            Suspect(tok.start, tok.end, tok.text, known, [(c, 0.0) for c in cands])
+                        )
                 per_text.append(sus)
                 if any(s.cands for s in sus):
                     rows.append(ti), variants.append(text), owners.append((ti,))
@@ -155,7 +175,7 @@ class NeuralSpellChecker:
 
     def decide(self, text: str, suspects: list[Suspect], lang: str, margins=None) -> str:
         m = margins or self.margins[lang]
-        out = normalize(text)
+        out = _norm(text)
         for s in sorted(suspects, key=lambda s: -s.start):
             if not s.cands:
                 continue
@@ -168,13 +188,13 @@ class NeuralSpellChecker:
 
     # ---- public API (any length of text) ---------------------------------------------------
     def _spans(self, text: str, lang: str) -> list[tuple[int, list[Suspect]]]:
-        text = normalize(text)
+        text = _norm(text)
         spans = [(a, b) for a, b in _chunks(text) if b - a <= MAX_CHARS]
         props = self.propose([text[a:b] for a, b in spans], lang) if spans else []
         return [(a, p) for (a, _), p in zip(spans, props, strict=True)]
 
     def correct(self, text: str, lang: str = "kn") -> str:
-        text = normalize(text)
+        text = _norm(text)
         out, pos = [], 0
         for a, sus in self._spans(text, lang):
             end = max((s.end for s in sus), default=0)

@@ -5,7 +5,7 @@
 
 /xlit uses the trained neural model when a checkpoint is found (AKSHARA_XLIT_CKPT or
 models/xlit/checkpoints/xlit.pt), otherwise the rule baseline. Kannada uses the Kannada-only
-checkpoint xlit_kn.pt next to it when present (it scores a bit higher on Kannada). /spell runs the dictionary
+checkpoint xlit_kn.pt next to it when present (it scores a bit higher on Kannada). /spell uses the context spell model when models/spell/checkpoints/spell.pt exists (AKSHARA_SPELL_CKPT), else the dictionary
 baseline. /ocr and /stt arrive in Phases 3 and 4.
 """
 
@@ -28,6 +28,9 @@ from common.text import normalize
 from models.spell.checker import SpellChecker, load_wordfreq
 from models.xlit.rules import RuleTransliterator
 
+SPELL_CKPT = Path(
+    os.getenv("AKSHARA_SPELL_CKPT", Path(__file__).parents[1] / "models/spell/checkpoints/spell.pt")
+)
 XLIT_CKPT = Path(
     os.getenv("AKSHARA_XLIT_CKPT", Path(__file__).parents[1] / "models/xlit/checkpoints/xlit.pt")
 )
@@ -62,6 +65,12 @@ def _load_models() -> None:
         VERSIONS["xlit"] = ", ".join(
             f"{lang}: {v}" for lang, (_, v) in state["xlit_neural"].items()
         )
+    state["spell_neural"] = None
+    if SPELL_CKPT.exists():
+        from models.spell.neural import NeuralSpellChecker  # needs torch
+
+        state["spell_neural"] = NeuralSpellChecker(SPELL_CKPT, checkers=state["spell"])
+        VERSIONS["spell"] = f"context-model ({SPELL_CKPT.name}) + symspell"
 
 
 @asynccontextmanager
@@ -100,6 +109,7 @@ class XlitIn(BaseModel):
 class SpellIn(BaseModel):
     text: str = Field(..., max_length=5000, examples=["ನಮಸ್ಕರ, ನಾನು ಬೆಂಗಲೂರು"])
     lang: Lang = "kn"
+    engine: Literal["auto", "context", "dictionary"] = "auto"
 
 
 class FeedbackIn(BaseModel):
@@ -137,11 +147,19 @@ def xlit(body: XlitIn):
 @app.post("/spell")
 def spell(body: SpellIn):
     text = normalize(body.text, strip_zero_width=False)
-    checker = state["spell"][body.lang]
-    res = {"text": text, "errors": checker.check(text), "corrected": checker.correct(text)}
-    res["request_id"] = db.log_request(
-        state["db"], "spell", body.lang, text, res, VERSIONS["spell"]
-    )
+    neural = state["spell_neural"]
+    if body.engine == "context" and neural is None:
+        raise HTTPException(503, "No trained spell model loaded.")
+    if neural is not None and body.engine != "dictionary":
+        errors = neural.check(text, lang=body.lang)
+        res = {"text": text, "errors": errors, "corrected": neural.correct(text, lang=body.lang)}
+        version = VERSIONS["spell"]
+    else:
+        checker = state["spell"][body.lang]
+        res = {"text": text, "errors": checker.check(text), "corrected": checker.correct(text)}
+        version = "symspell-akshara-v0.1"
+    res["engine"] = version
+    res["request_id"] = db.log_request(state["db"], "spell", body.lang, text, res, version)
     return res
 
 
