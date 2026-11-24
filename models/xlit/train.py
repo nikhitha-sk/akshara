@@ -26,8 +26,6 @@ from torch import nn
 
 from common.metrics import cer, topk_accuracy
 from models.xlit.model import (
-    BOS,
-    EOS,
     LANG_TOKENS,
     PAD,
     Vocab,
