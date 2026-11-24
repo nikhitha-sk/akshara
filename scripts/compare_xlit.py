@@ -17,6 +17,7 @@ from pathlib import Path
 
 from common.metrics import cer, topk_accuracy
 from common.paths import REPORTS, XLIT
+from common.text import normalize
 from models.spell.checker import load_wordfreq
 from models.xlit.rules import RuleTransliterator
 
@@ -30,7 +31,10 @@ def read_rows(path: Path) -> list[list[str]]:
 
 
 def score(refs: list[str], cands: list[list[str]], ms: float) -> dict:
-    cands = [c or [""] for c in cands]
+    # NFC + drop invisible marks (IndicXlit adds ZWNJ after a word-final virama) so only real
+    # spelling differences count as errors.
+    refs = [normalize(r) for r in refs]
+    cands = [[normalize(x) for x in c] or [""] for c in cands]
     return {
         "top1": round(topk_accuracy(refs, cands, 1), 4),
         "top5": round(topk_accuracy(refs, cands, 5), 4),
@@ -48,16 +52,21 @@ def timed(fn, words: list[str]) -> tuple[list[list[str]], float]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", type=Path, default=Path("models/xlit/checkpoints/xlit.pt"))
+    ap.add_argument("--ckpt-kn", type=Path, default=Path("models/xlit/checkpoints/xlit_kn.pt"),
+                    help="Kannada-only checkpoint used for kn_test (falls back to --ckpt)")  # fmt: skip
     ap.add_argument("--indicxlit", type=Path, default=Path("runs/indicxlit"))
     ap.add_argument("--data", type=Path, default=KAGGLE)
     a = ap.parse_args()
 
     freqs = {lang: load_wordfreq(a.data / f"{lang}_wordfreq.tsv") for lang in ("kn", "tcy")}
-    neural = None
+    neural = {}
     if a.ckpt.exists():
         from models.xlit.neural import NeuralTransliterator
 
-        neural = NeuralTransliterator(a.ckpt, freqs)
+        neural["tcy"] = NeuralTransliterator(a.ckpt, freqs)
+        neural["kn"] = (
+            NeuralTransliterator(a.ckpt_kn, freqs) if a.ckpt_kn.exists() else neural["tcy"]
+        )
 
     results = []
     for test, lang in TESTS.items():
@@ -75,9 +84,9 @@ def main() -> None:
         models["rules+wordlist"] = timed(
             lambda ws, x=rules: [x.word_candidates(w, k=5) for w in ws], romans
         )
-        if neural is not None:
-            models["char-transformer+wordlist"] = timed(
-                lambda ws, lg=lang: neural.candidates(ws, lg, k=5), romans
+        if lang in neural:
+            models["char-transformer+wordlist (ours)"] = timed(
+                lambda ws, lg=lang: neural[lg].candidates(ws, lg, k=5), romans
             )
         for name, (cands, ms) in models.items():
             res = {"tool": "xlit", "model": name, "lang": lang, "test_file": test, "n": len(rows),

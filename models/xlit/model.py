@@ -100,13 +100,35 @@ def greedy_decode(model: XlitTransformer, src: torch.Tensor, max_len: int = 40) 
     ys = torch.full((src.size(0), 1), BOS, dtype=torch.long, device=src.device)
     done = torch.zeros(src.size(0), dtype=torch.bool, device=src.device)
     for _ in range(max_len):
-        nxt = model.decode(ys, memory, pad, tgt_pad=False)[:, -1].argmax(-1)
+        logits = model.decode(ys, memory, pad, tgt_pad=False)[:, -1]
+        logits[:, [PAD, BOS]] = float("-inf")
+        nxt = logits.argmax(-1)
         nxt[done] = PAD
         ys = torch.cat([ys, nxt[:, None]], 1)
         done |= nxt == EOS
         if done.all():
             break
     return ys[:, 1:]
+
+
+@torch.no_grad()
+def score_targets(
+    model: XlitTransformer, src: torch.Tensor, targets: list[list[int]], alpha: float = 0.7
+) -> list[float]:
+    """Length-normalized log-prob of given target ids (each ending in EOS), same scale as beam_search.
+
+    src: (N, S), one row per target. Used to score extra candidates (e.g. from the rule engine).
+    """
+    L = max(map(len, targets))
+    tgt_in = torch.full((len(targets), L), PAD, dtype=torch.long, device=src.device)
+    gold = torch.full((len(targets), L), PAD, dtype=torch.long, device=src.device)
+    for i, t in enumerate(targets):
+        tgt_in[i, 0] = BOS
+        tgt_in[i, 1 : len(t)] = torch.tensor(t[:-1])
+        gold[i, : len(t)] = torch.tensor(t)
+    logp = model(src, tgt_in).float().log_softmax(-1)
+    tok = logp.gather(-1, gold[..., None]).squeeze(-1).masked_fill(gold == PAD, 0.0)
+    return [float(s) / (len(t) ** alpha) for s, t in zip(tok.sum(1).tolist(), targets, strict=True)]
 
 
 @torch.no_grad()
@@ -125,6 +147,7 @@ def beam_search(
     for _ in range(max_len):
         logp = model.decode(seqs, memory, pad, tgt_pad=False)[:, -1].float().log_softmax(-1)
         V = logp.size(-1)
+        logp[:, [PAD, BOS]] = float("-inf")  # never real output tokens
         logp[finished] = float("-inf")
         logp[finished, PAD] = 0.0  # finished beams just carry their score forward
         cand = (scores[:, None] + logp).view(B, beam * V)

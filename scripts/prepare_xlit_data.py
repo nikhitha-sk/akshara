@@ -6,6 +6,9 @@
 
 Output folder data/xlit/kaggle/:
     kn_{train,valid,test}.tsv     Aksharantar Kannada (roman<TAB>native)
+    kn_casual.tsv                 extra TRAIN pairs: casual WhatsApp-style spellings of common Kannada
+                                  words (ooru -> ಊರು), made with the reverse trick. Aksharantar
+                                  rarely spells ಊ as "oo" or ಈ as "ee", but real users do.
     tcy_{train,valid,test}.tsv    Tulu reverse-trick pairs, split BY WORD (no word in two splits)
     {kn,tcy}_wordfreq.tsv         word lists for re-ranking
     human_tcy_test.tsv            (only if volunteers have typed pairs) the honest Tulu test
@@ -20,11 +23,14 @@ import json
 import random
 import shutil
 
-from common.paths import CORPUS, VOLUNTEER, XLIT
-from common.text import normalize, split_words
+from common.paths import CORPUS, ROOT, VOLUNTEER, XLIT
+from common.text import kannada_ratio, normalize, split_words
+from models.xlit.rules import kannada_to_roman
 
 OUT = XLIT / "kaggle"
 MAX_LEN = 30
+CASUAL_WORDS = 150_000  # most frequent Kannada words used for kn_casual.tsv
+CASUAL_VARIANTS = 4
 
 
 def _ok(roman: str, native: str) -> bool:
@@ -42,6 +48,7 @@ def main(seed: int = 13) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
 
+    held_out: set[str] = set()
     for split in ("train", "valid", "test"):
         pairs, seen = [], set()
         with open(XLIT / f"kn_{split}.jsonl", encoding="utf-8") as f:
@@ -52,6 +59,26 @@ def main(seed: int = 13) -> None:
                     seen.add(p)
                     pairs.append(p)
         _write(f"kn_{split}.tsv", pairs)
+        if split != "train":
+            held_out.update(n for _, n in pairs)
+
+    # Casual spellings for common words; words in kn valid/test and in the hand-made casual check
+    # (reports/casual_check_kn.tsv) are left out, so those scores stay honest.
+    check = ROOT / "reports" / "casual_check_kn.tsv"
+    if check.exists():
+        rows = [line.rstrip("\n").split("\t") for line in open(check, encoding="utf-8")]
+        held_out.update(r[1] for r in rows if len(r) == 2)
+    casual = []
+    with open(CORPUS / "kn_wordfreq.tsv", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= CASUAL_WORDS:
+                break
+            w = line.split("\t")[0]
+            if w in held_out or kannada_ratio(w) < 1.0:
+                continue
+            casual += [(r, w) for r in kannada_to_roman(w, max_variants=CASUAL_VARIANTS) if _ok(r, w)]
+    random.Random(seed + 1).shuffle(casual)  # own RNG: keeps the Tulu split unchanged
+    _write("kn_casual.tsv", casual)
 
     by_word: dict[str, list[str]] = {}
     with open(XLIT / "tcy_reverse_pairs.jsonl", encoding="utf-8") as f:

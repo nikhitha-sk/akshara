@@ -4,7 +4,8 @@
     open http://127.0.0.1:8000  (demo page)   ·   http://127.0.0.1:8000/docs  (API docs)
 
 /xlit uses the trained neural model when a checkpoint is found (AKSHARA_XLIT_CKPT or
-models/xlit/checkpoints/xlit.pt), otherwise the rule baseline. /spell runs the dictionary
+models/xlit/checkpoints/xlit.pt), otherwise the rule baseline. Kannada uses the Kannada-only
+checkpoint xlit_kn.pt next to it when present (it scores a bit higher on Kannada). /spell runs the dictionary
 baseline. /ocr and /stt arrive in Phases 3 and 4.
 """
 
@@ -27,7 +28,9 @@ from common.text import normalize
 from models.spell.checker import SpellChecker, load_wordfreq
 from models.xlit.rules import RuleTransliterator
 
-XLIT_CKPT = Path(os.getenv("AKSHARA_XLIT_CKPT", Path(__file__).parents[1] / "models/xlit/checkpoints/xlit.pt"))
+XLIT_CKPT = Path(
+    os.getenv("AKSHARA_XLIT_CKPT", Path(__file__).parents[1] / "models/xlit/checkpoints/xlit.pt")
+)
 
 Lang = Literal["kn", "tcy"]
 VERSIONS = {"xlit": "rules-v0.1", "spell": "symspell-akshara-v0.1"}
@@ -46,12 +49,19 @@ def _load_models() -> None:
         state["words"][lang] = len(freqs[lang])
         state["xlit"][lang] = RuleTransliterator(freqs[lang])
         state["spell"][lang] = SpellChecker(freqs[lang])
-    state["xlit_neural"] = None
+    state["xlit_neural"] = {}
     if XLIT_CKPT.exists():
         from models.xlit.neural import NeuralTransliterator  # needs torch
 
-        state["xlit_neural"] = NeuralTransliterator(XLIT_CKPT, freqs)
-        VERSIONS["xlit"] = f"char-transformer ({XLIT_CKPT.name})"
+        kn_ckpt = XLIT_CKPT.with_name("xlit_kn.pt")
+        ckpts = {"tcy": XLIT_CKPT, "kn": kn_ckpt if kn_ckpt.exists() else XLIT_CKPT}
+        loaded = {p: NeuralTransliterator(p, freqs) for p in set(ckpts.values())}
+        state["xlit_neural"] = {
+            lang: (loaded[p], f"char-transformer ({p.name})") for lang, p in ckpts.items()
+        }
+        VERSIONS["xlit"] = ", ".join(
+            f"{lang}: {v}" for lang, (_, v) in state["xlit_neural"].items()
+        )
 
 
 @asynccontextmanager
@@ -111,11 +121,12 @@ def health():
 
 @app.post("/xlit")
 def xlit(body: XlitIn):
-    neural = state["xlit_neural"]
+    neural = state["xlit_neural"].get(body.lang)
     if body.engine == "neural" and neural is None:
         raise HTTPException(503, "No trained transliteration model loaded.")
     if neural is not None and body.engine != "rules":
-        res, version = neural.transliterate(body.text, lang=body.lang, k=body.k), VERSIONS["xlit"]
+        model, version = neural
+        res = model.transliterate(body.text, lang=body.lang, k=body.k)
     else:
         res, version = state["xlit"][body.lang].transliterate(body.text, k=body.k), "rules-v0.1"
     res["engine"] = version
@@ -128,7 +139,9 @@ def spell(body: SpellIn):
     text = normalize(body.text, strip_zero_width=False)
     checker = state["spell"][body.lang]
     res = {"text": text, "errors": checker.check(text), "corrected": checker.correct(text)}
-    res["request_id"] = db.log_request(state["db"], "spell", body.lang, text, res, VERSIONS["spell"])
+    res["request_id"] = db.log_request(
+        state["db"], "spell", body.lang, text, res, VERSIONS["spell"]
+    )
     return res
 
 
@@ -137,7 +150,9 @@ def feedback(body: FeedbackIn):
     """Save a (wrong output, right output) pair. These become free training data."""
     if normalize(body.model_output) == normalize(body.user_fix):
         return {"ok": True, "saved": False}
-    db.add_feedback(state["db"], body.tool, body.input_ref, body.model_output, normalize(body.user_fix))
+    db.add_feedback(
+        state["db"], body.tool, body.input_ref, body.model_output, normalize(body.user_fix)
+    )
     return {"ok": True, "saved": True}
 
 

@@ -218,6 +218,10 @@ def main() -> None:
     d = {f"{lang}_{s}": read_tsv(a.data / f"{lang}_{s}.tsv", a.max_train if (lang, s) == ("kn", "train") else None)
          for lang in ("kn", "tcy") for s in ("train", "valid", "test")}  # fmt: skip
     human = read_tsv(a.data / "human_tcy_test.tsv")
+    casual = read_tsv(a.data / "kn_casual.tsv", a.max_train)  # casual spellings, TRAIN only
+    if casual:
+        log(f"kn_casual: {len(casual)} pairs added to kn_train")
+        d["kn_train"] = d["kn_train"] + casual
     for k, v in d.items():
         log(f"{k}: {len(v)} pairs")
 
